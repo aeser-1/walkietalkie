@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ScrollView ensures the form is usable on very short screens / with keyboard open -->
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_surface"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/content_padding">
+
+        <!-- USERNAME ─────────────────────────────────────────────────────── -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="USERNAME"
+            android:textSize="@dimen/text_size_label"
+            android:textColor="@color/text_secondary"
+            android:letterSpacing="0.08" />
+
+        <EditText
+            android:id="@+id/et_username"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Your display name (max 20 chars)"
+            android:textSize="@dimen/text_size_body"
+            android:inputType="textPersonName|textNoSuggestions"
+            android:maxLength="20"
+            android:minHeight="48dp"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="@dimen/section_margin" />
+
+        <!-- GROUP ────────────────────────────────────────────────────────── -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GROUP / CHANNEL"
+            android:textSize="@dimen/text_size_label"
+            android:textColor="@color/text_secondary"
+            android:letterSpacing="0.08" />
+
+        <EditText
+            android:id="@+id/et_group"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Must match on all devices"
+            android:textSize="@dimen/text_size_body"
+            android:inputType="textNoSuggestions"
+            android:maxLength="20"
+            android:minHeight="48dp"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="@dimen/section_margin" />
+
+        <!-- PTT BUTTON TYPE ──────────────────────────────────────────────── -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PUSH-TO-TALK BUTTON"
+            android:textSize="@dimen/text_size_label"
+            android:textColor="@color/text_secondary"
+            android:letterSpacing="0.08" />
+
+        <RadioGroup
+            android:id="@+id/rg_ptt_type"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp">
+
+            <RadioButton
+                android:id="@+id/rb_screen"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="On-screen button"
+                android:textSize="@dimen/text_size_body"
+                android:minHeight="44dp"
+                android:checked="true"
+                android:paddingStart="8dp" />
+
+            <RadioButton
+                android:id="@+id/rb_volume_up"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Volume Up button"
+                android:textSize="@dimen/text_size_body"
+                android:minHeight="44dp"
+                android:paddingStart="8dp" />
+
+            <RadioButton
+                android:id="@+id/rb_volume_down"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Volume Down button"
+                android:textSize="@dimen/text_size_body"
+                android:minHeight="44dp"
+                android:paddingStart="8dp" />
+        </RadioGroup>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Volume buttons are ideal for hand terminals — hold the device like a real walkie-talkie."
+            android:textSize="@dimen/text_size_label"
+            android:textColor="@color/text_secondary"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="@dimen/section_margin" />
+
+        <!-- SAVE ─────────────────────────────────────────────────────────── -->
+        <Button
+            android:id="@+id/btn_save"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="Save Settings"
+            android:textSize="@dimen/text_size_title"
+            android:backgroundTint="@color/ptt_idle"
+            android:layout_marginTop="8dp" />
+
+    </LinearLayout>
+</ScrollView>

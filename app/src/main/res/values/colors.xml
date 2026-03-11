@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand -->
+    <color name="ptt_idle">#C62828</color>
+    <color name="ptt_active">#FF6F00</color>
+
+    <!-- Backgrounds -->
+    <color name="bg_dark">#121212</color>
+    <color name="bg_surface">#1E1E1E</color>
+
+    <!-- Text -->
+    <color name="text_primary">#EFEFEF</color>
+    <color name="text_secondary">#9E9E9E</color>
+
+    <!-- Misc -->
+    <color name="divider">#333333</color>
+    <color name="status_ok">#69F0AE</color>
+
+    <!-- Launcher icon background -->
+    <color name="ic_launcher_background">#C62828</color>
+</resources>

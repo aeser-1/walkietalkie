@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Medium phones (400–599 dp wide) -->
+<resources>
+    <dimen name="content_padding">14dp</dimen>
+    <dimen name="section_margin">10dp</dimen>
+    <dimen name="ptt_height">120dp</dimen>
+
+    <dimen name="text_size_label">12sp</dimen>
+    <dimen name="text_size_body">15sp</dimen>
+    <dimen name="text_size_title">16sp</dimen>
+    <dimen name="text_size_status">16sp</dimen>
+    <dimen name="text_size_ptt">20sp</dimen>
+    <dimen name="text_size_settings_header">14sp</dimen>
+</resources>

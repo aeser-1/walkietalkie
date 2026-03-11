@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Default: small screens / hand terminals (≤ 360 dp wide, e.g. 720×1280 @ 320 dpi) -->
+<resources>
+    <dimen name="content_padding">10dp</dimen>
+    <dimen name="section_margin">8dp</dimen>
+    <dimen name="ptt_height">96dp</dimen>
+
+    <dimen name="text_size_label">11sp</dimen>
+    <dimen name="text_size_body">13sp</dimen>
+    <dimen name="text_size_title">14sp</dimen>
+    <dimen name="text_size_status">14sp</dimen>
+    <dimen name="text_size_ptt">17sp</dimen>
+    <dimen name="text_size_settings_header">13sp</dimen>
+</resources>

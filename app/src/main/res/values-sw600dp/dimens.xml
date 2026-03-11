@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tablets / large screens (600 dp+ wide) -->
+<resources>
+    <dimen name="content_padding">24dp</dimen>
+    <dimen name="section_margin">14dp</dimen>
+    <dimen name="ptt_height">160dp</dimen>
+
+    <dimen name="text_size_label">13sp</dimen>
+    <dimen name="text_size_body">16sp</dimen>
+    <dimen name="text_size_title">18sp</dimen>
+    <dimen name="text_size_status">20sp</dimen>
+    <dimen name="text_size_ptt">24sp</dimen>
+    <dimen name="text_size_settings_header">15sp</dimen>
+</resources>

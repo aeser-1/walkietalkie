@@ -1,0 +1,23 @@
+# Built artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Build directories
+build/
+.gradle/
+app/build/
+
+# Local configuration
+local.properties
+
+# IDE files
+.idea/
+*.iml
+.DS_Store
+
+# Keystore files
+*.jks
+*.keystore
