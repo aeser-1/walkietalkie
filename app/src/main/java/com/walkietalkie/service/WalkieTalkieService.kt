@@ -59,6 +59,10 @@ class WalkieTalkieService : Service() {
 
     private var wm: WindowManager? = null
     private var pttOverlayView: TextView? = null
+    private var overlayParams: WindowManager.LayoutParams? = null
+    private var overlayDragging = false
+    private var overlayLastRawX = 0f
+    private var overlayLastRawY = 0f
     private var wakeLock: PowerManager.WakeLock? = null
 
     private val beepAttrs: AudioAttributes = AudioAttributes.Builder()
@@ -174,20 +178,46 @@ class WalkieTalkieService : Service() {
         if (pttOverlayView != null) return
         if (!Settings.canDrawOverlays(this)) return
 
+        val dragThresholdPx = (resources.displayMetrics.density * 8).toInt()
+
         val btn = TextView(this).apply {
             isClickable = true
-            textSize = 15f
+            textSize = 12f
             setTextColor(Color.WHITE)
-            setPadding(56, 28, 56, 28)
+            setPadding(36, 14, 36, 14)
             gravity = Gravity.CENTER
             setOnTouchListener { v, event ->
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
+                        overlayDragging  = false
+                        overlayLastRawX  = event.rawX
+                        overlayLastRawY  = event.rawY
                         startTransmitting()
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - overlayLastRawX
+                        val dy = event.rawY - overlayLastRawY
+                        if (!overlayDragging &&
+                            (kotlin.math.abs(dx) > dragThresholdPx ||
+                             kotlin.math.abs(dy) > dragThresholdPx)
+                        ) {
+                            overlayDragging = true
+                            stopTransmitting()
+                        }
+                        if (overlayDragging) {
+                            overlayParams?.let { p ->
+                                p.x += dx.toInt()
+                                p.y -= dy.toInt()   // y is offset from bottom
+                                try { wm?.updateViewLayout(v, p) } catch (_: Exception) {}
+                            }
+                            overlayLastRawX = event.rawX
+                            overlayLastRawY = event.rawY
+                        }
                     }
                     MotionEvent.ACTION_UP,
                     MotionEvent.ACTION_CANCEL -> {
-                        stopTransmitting()
+                        if (!overlayDragging) stopTransmitting()
+                        overlayDragging = false
                     }
                 }
                 true
@@ -210,6 +240,7 @@ class WalkieTalkieService : Service() {
         try {
             wm?.addView(btn, params)
             pttOverlayView = btn
+            overlayParams  = params
         } catch (_: Exception) {}
     }
 
@@ -217,6 +248,7 @@ class WalkieTalkieService : Service() {
         pttOverlayView?.let {
             try { wm?.removeView(it) } catch (_: Exception) {}
             pttOverlayView = null
+            overlayParams  = null
         }
     }
 
