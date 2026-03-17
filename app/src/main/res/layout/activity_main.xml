@@ -104,28 +104,6 @@
             android:lineSpacingMultiplier="1.5" />
     </ScrollView>
 
-    <!-- ── Transmit badge — animated, visible only while PTT is active ─────── -->
-    <TextView
-        android:id="@+id/tv_transmit_badge"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="TRANSMITTING"
-        android:textColor="#FFFFFF"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        android:letterSpacing="0.05"
-        android:paddingLeft="32dp"
-        android:paddingRight="32dp"
-        android:paddingTop="14dp"
-        android:paddingBottom="14dp"
-        android:background="@drawable/bg_transmit_badge"
-        android:elevation="8dp"
-        android:visibility="gone"
-        app:layout_constraintTop_toBottomOf="@id/divider"
-        app:layout_constraintBottom_toTopOf="@id/tv_status"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
-
     <!-- ── Status line ────────────────────────────────────────────────────── -->
     <TextView
         android:id="@+id/tv_status"
@@ -167,6 +145,27 @@
         android:paddingTop="4dp"
         android:paddingBottom="2dp"
         app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!-- ── Transmit badge — LAST in XML so it is always drawn on top ────────── -->
+    <TextView
+        android:id="@+id/tv_transmit_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="TRANSMITTING"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.05"
+        android:paddingLeft="32dp"
+        android:paddingRight="32dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:background="@drawable/bg_transmit_badge"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/btn_ptt"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

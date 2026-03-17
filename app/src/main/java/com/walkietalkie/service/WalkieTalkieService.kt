@@ -61,7 +61,7 @@ class WalkieTalkieService : Service() {
     private var overlayView: View? = null
 
     private val beepAttrs: AudioAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+        .setUsage(AudioAttributes.USAGE_MEDIA)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
         .build()
 
