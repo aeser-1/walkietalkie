@@ -11,6 +11,13 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Keep CPU awake while transmitting -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Foreground service (network + microphone) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- System overlay for the "Transmitting" badge when app is in background -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Foreground service notification on Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
@@ -36,6 +43,11 @@
             android:exported="false"
             android:parentActivityName=".MainActivity"
             android:windowSoftInputMode="adjustResize" />
+
+        <service
+            android:name=".service.WalkieTalkieService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
     </application>
 

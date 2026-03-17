@@ -1,12 +1,18 @@
 package com.walkietalkie
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Intent
+import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -16,8 +22,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.walkietalkie.audio.AudioStreamer
 import com.walkietalkie.network.UdpMulticastManager
+import com.walkietalkie.service.WalkieTalkieService
 
 class MainActivity : AppCompatActivity() {
 
@@ -32,11 +38,10 @@ class MainActivity : AppCompatActivity() {
         const val PTT_VOLUME_DOWN  = 2
 
         private const val REQ_AUDIO_PERMISSION = 1001
+        private const val REQ_NOTIF_PERMISSION = 1002
     }
 
     private lateinit var prefs: SharedPreferences
-    private lateinit var udpManager: UdpMulticastManager
-    private lateinit var audioStreamer: AudioStreamer
 
     private lateinit var tvUsername: TextView
     private lateinit var tvGroup: TextView
@@ -46,18 +51,50 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnSettings: Button
 
     // username -> last-seen timestamp (ms). Capped to prevent memory exhaustion.
-    private val activeUsers = LinkedHashMap<String, Long>()
+    private val activeUsers    = LinkedHashMap<String, Long>()
     private val MAX_ACTIVE_USERS = 50
-    private val handler = Handler(Looper.getMainLooper())
+    private val handler        = Handler(Looper.getMainLooper())
 
     @Volatile private var transmitting = false
-    private var networkStarted = false
+
+    // ── Service binding ───────────────────────────────────────────────────────
+
+    private var service: WalkieTalkieService? = null
+    private var isBound = false
+    private var audioPermissionGranted = false
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+            service = (binder as WalkieTalkieService.ServiceBinder).getService()
+            isBound = true
+            service!!.isActivityVisible = true
+            service!!.onUserEvent = ::handleUserEvent
+
+            if (audioPermissionGranted && !service!!.isNetworkStarted) {
+                service!!.startNetwork()
+            }
+
+            // Sync transmitting state in case service was already transmitting
+            if (service!!.isTransmitting && !transmitting) {
+                transmitting = true
+                updatePttUi(transmitting = true)
+            }
+
+            applySettings()
+            handler.post(cleanupTask)
+        }
+
+        override fun onServiceDisconnected(name: ComponentName) {
+            isBound = false
+            service = null
+        }
+    }
 
     // Periodic cleanup: remove users not heard from in 5 s
     private val cleanupTask = object : Runnable {
         override fun run() {
             val cutoff = System.currentTimeMillis() - 5000
-            val stale = activeUsers.entries.filter { it.value < cutoff }.map { it.key }
+            val stale  = activeUsers.entries.filter { it.value < cutoff }.map { it.key }
             if (stale.isNotEmpty()) {
                 stale.forEach { activeUsers.remove(it) }
                 refreshUserList()
@@ -74,42 +111,57 @@ class MainActivity : AppCompatActivity() {
 
         prefs = getSharedPreferences(PREF_NAME, MODE_PRIVATE)
 
-        tvUsername = findViewById(R.id.tv_username)
-        tvGroup    = findViewById(R.id.tv_group)
-        tvStatus   = findViewById(R.id.tv_status)
-        tvUsers    = findViewById(R.id.tv_users)
-        btnPtt     = findViewById(R.id.btn_ptt)
+        tvUsername  = findViewById(R.id.tv_username)
+        tvGroup     = findViewById(R.id.tv_group)
+        tvStatus    = findViewById(R.id.tv_status)
+        tvUsers     = findViewById(R.id.tv_users)
+        btnPtt      = findViewById(R.id.btn_ptt)
         btnSettings = findViewById(R.id.btn_settings)
 
         btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        udpManager   = UdpMulticastManager(this)
-        audioStreamer = AudioStreamer(udpManager)
-
         checkPermissionAndStart()
+        requestOverlayPermission()
+        requestNotificationPermission()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // startService ensures the service outlives this activity binding
+        val intent = Intent(this, WalkieTalkieService::class.java)
+        startService(intent)
+        bindService(intent, serviceConnection, BIND_AUTO_CREATE)
     }
 
     override fun onResume() {
         super.onResume()
+        service?.isActivityVisible = true
         applySettings()
         setupPttButton()
     }
 
     override fun onPause() {
         super.onPause()
-        // Always stop transmitting when leaving foreground
+        service?.isActivityVisible = false
         if (transmitting) stopTransmitting()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        handler.removeCallbacks(cleanupTask)
+        if (isBound) {
+            service?.onUserEvent = null
+            unbindService(serviceConnection)
+            isBound  = false
+            service  = null
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        handler.removeCallbacks(cleanupTask)
-        Thread {
-            udpManager.stop()
-            audioStreamer.release()
-        }.start()
+        // Service keeps running for background audio receive; we only unbind here.
     }
 
     // ── Settings ──────────────────────────────────────────────────────────────
@@ -127,8 +179,10 @@ class MainActivity : AppCompatActivity() {
         tvUsername.text = "User: $username"
         tvGroup.text    = "Group: $group"
 
-        udpManager.username = username
-        udpManager.group    = group
+        service?.let {
+            it.udpManager.username = username
+            it.udpManager.group    = group
+        }
         refreshUserList()
     }
 
@@ -148,7 +202,6 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             btnPtt.visibility = View.GONE
-            // Handled in onKeyDown/onKeyUp
         }
     }
 
@@ -171,32 +224,39 @@ class MainActivity : AppCompatActivity() {
         return super.onKeyUp(keyCode, event)
     }
 
-    private fun matchesPtt(pttType: Int, keyCode: Int): Boolean {
-        return (pttType == PTT_VOLUME_UP   && keyCode == KeyEvent.KEYCODE_VOLUME_UP) ||
-               (pttType == PTT_VOLUME_DOWN && keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)
-    }
+    private fun matchesPtt(pttType: Int, keyCode: Int): Boolean =
+        (pttType == PTT_VOLUME_UP   && keyCode == KeyEvent.KEYCODE_VOLUME_UP) ||
+        (pttType == PTT_VOLUME_DOWN && keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)
 
     // ── Transmit control ──────────────────────────────────────────────────────
 
     private fun startTransmitting() {
         if (transmitting) return
         transmitting = true
-        tvStatus.text = "Transmitting..."
-        btnPtt.text   = "RELEASE TO STOP"
-        btnPtt.setBackgroundColor(getColor(R.color.ptt_active))
-        audioStreamer.startTransmitting()
+        updatePttUi(transmitting = true)
+        service?.startTransmitting()
     }
 
     private fun stopTransmitting() {
         if (!transmitting) return
         transmitting = false
-        tvStatus.text = "Ready"
-        btnPtt.text   = "PRESS TO TALK"
-        btnPtt.setBackgroundColor(getColor(R.color.ptt_idle))
-        audioStreamer.stopTransmitting()
+        updatePttUi(transmitting = false)
+        service?.stopTransmitting()
     }
 
-    // ── Permissions & networking ───────────────────────────────────────────────
+    private fun updatePttUi(transmitting: Boolean) {
+        if (transmitting) {
+            tvStatus.text = "Transmitting..."
+            btnPtt.text   = "RELEASE TO STOP"
+            btnPtt.setBackgroundColor(getColor(R.color.ptt_active))
+        } else {
+            tvStatus.text = "Ready"
+            btnPtt.text   = "PRESS TO TALK"
+            btnPtt.setBackgroundColor(getColor(R.color.ptt_idle))
+        }
+    }
+
+    // ── Permissions ───────────────────────────────────────────────────────────
 
     private fun checkPermissionAndStart() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
@@ -206,7 +266,32 @@ class MainActivity : AppCompatActivity() {
                 this, arrayOf(Manifest.permission.RECORD_AUDIO), REQ_AUDIO_PERMISSION
             )
         } else {
-            startNetworking()
+            audioPermissionGranted = true
+        }
+    }
+
+    private fun requestOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            Toast.makeText(
+                this,
+                "Grant 'Display over other apps' for the transmit indicator",
+                Toast.LENGTH_LONG
+            ).show()
+            startActivity(
+                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+            )
+        }
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIF_PERMISSION
+                )
+            }
         }
     }
 
@@ -214,60 +299,46 @@ class MainActivity : AppCompatActivity() {
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_AUDIO_PERMISSION &&
-            grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
-            startNetworking()
-        } else {
-            Toast.makeText(this, "Microphone permission is required", Toast.LENGTH_LONG).show()
-            finish()
+        if (requestCode == REQ_AUDIO_PERMISSION) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                audioPermissionGranted = true
+                if (isBound && !service!!.isNetworkStarted) {
+                    service!!.startNetwork()
+                }
+            } else {
+                Toast.makeText(this, "Microphone permission is required", Toast.LENGTH_LONG).show()
+                finish()
+            }
         }
     }
 
-    private fun startNetworking() {
-        if (networkStarted) return
-        networkStarted = true
+    // ── Packet handling ───────────────────────────────────────────────────────
 
-        udpManager.onPacketReceived = { pkt ->
-            val myName = prefs.getString(PREF_USERNAME, "").orEmpty()
-            when (pkt.type) {
-                UdpMulticastManager.TYPE_PING,
-                UdpMulticastManager.TYPE_AUDIO -> {
-                    // Enforce cap — evict oldest before inserting a new unknown username
-                    if (!activeUsers.containsKey(pkt.username) && activeUsers.size >= MAX_ACTIVE_USERS) {
-                        val oldest = activeUsers.minByOrNull { it.value }?.key
-                        if (oldest != null) activeUsers.remove(oldest)
-                    }
-                    activeUsers[pkt.username] = System.currentTimeMillis()
-                    handler.post { refreshUserList() }
+    // Called on the main thread by WalkieTalkieService for presence events.
+    // Audio playback is handled by the service itself.
+    private fun handleUserEvent(pkt: UdpMulticastManager.Packet) {
+        when (pkt.type) {
+            UdpMulticastManager.TYPE_PING,
+            UdpMulticastManager.TYPE_AUDIO -> {
+                if (!activeUsers.containsKey(pkt.username) && activeUsers.size >= MAX_ACTIVE_USERS) {
+                    val oldest = activeUsers.minByOrNull { it.value }?.key
+                    if (oldest != null) activeUsers.remove(oldest)
                 }
-                UdpMulticastManager.TYPE_LEAVE -> {
-                    activeUsers.remove(pkt.username)
-                    handler.post { refreshUserList() }
-                }
+                activeUsers[pkt.username] = System.currentTimeMillis()
+                refreshUserList()
             }
-            // Play audio from others only
-            if (pkt.type == UdpMulticastManager.TYPE_AUDIO && pkt.username != myName) {
-                audioStreamer.playAudio(pkt.data)
+            UdpMulticastManager.TYPE_LEAVE -> {
+                activeUsers.remove(pkt.username)
+                refreshUserList()
             }
         }
-
-        audioStreamer.initPlayback()
-
-        Thread {
-            udpManager.start()
-            handler.post { tvStatus.text = "Ready" }
-        }.start()
-
-        handler.post(cleanupTask)
     }
 
     // ── UI helpers ────────────────────────────────────────────────────────────
 
     private fun refreshUserList() {
         val myName = prefs.getString(PREF_USERNAME, "").orEmpty()
-        val lines = mutableListOf<String>()
+        val lines  = mutableListOf<String>()
         if (myName.isNotEmpty()) lines.add("$myName  (you)")
         activeUsers.keys.filter { it != myName }.forEach { lines.add(it) }
         tvUsers.text = lines.joinToString("\n") { "• $it" }
