@@ -17,9 +17,10 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.Gravity
-import android.view.View
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
@@ -32,11 +33,10 @@ import com.walkietalkie.network.UdpMulticastManager
  * Foreground service that owns network and audio resources so the app stays
  * alive after the activity is backgrounded or destroyed.
  *
- * Responsibilities:
- *  - Runs UdpMulticastManager and AudioStreamer for the lifetime of the service
- *  - Shows / hides a system overlay badge when transmitting in the background
- *  - Plays beep tones at PTT start and stop
- *  - Updates the persistent foreground notification with current status
+ * When the activity is not visible, shows a floating "HOLD TO TALK" overlay
+ * button so the user can transmit from the home screen or any other app.
+ * A PARTIAL_WAKE_LOCK keeps the CPU running for reliable packet reception
+ * while the screen is off.
  */
 class WalkieTalkieService : Service() {
 
@@ -58,7 +58,8 @@ class WalkieTalkieService : Service() {
         private set
 
     private var wm: WindowManager? = null
-    private var overlayView: View? = null
+    private var pttOverlayView: TextView? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private val beepAttrs: AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -67,17 +68,11 @@ class WalkieTalkieService : Service() {
 
     @Volatile var isTransmitting   = false; private set
     @Volatile var isNetworkStarted = false; private set
+    @Volatile var isActivityVisible = false; private set
 
     /**
-     * Set to true by MainActivity while it is in the foreground (onResume →
-     * onPause). The overlay is only shown when this is false (app in background).
-     */
-    @Volatile var isActivityVisible = false
-
-    /**
-     * Called on the main thread for every PING / AUDIO / LEAVE packet after the
-     * service has filtered for group membership and rate limits.
-     * Audio playback is handled internally; only presence events reach this callback.
+     * Called on the main thread for every PING / AUDIO / LEAVE packet.
+     * Audio playback is handled internally; only presence events reach here.
      */
     var onUserEvent: ((UdpMulticastManager.Packet) -> Unit)? = null
 
@@ -90,8 +85,6 @@ class WalkieTalkieService : Service() {
         audioStreamer = AudioStreamer(udpManager)
         wm            = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-        // Service owns the packet callback; it plays audio and notifies the
-        // activity (if bound) for user-list updates.
         udpManager.onPacketReceived = { pkt ->
             if (pkt.type == UdpMulticastManager.TYPE_AUDIO && pkt.username != udpManager.username) {
                 audioStreamer.playAudio(pkt.data)
@@ -109,7 +102,7 @@ class WalkieTalkieService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        hideOverlay()
+        hidePttOverlay()
         if (isTransmitting) {
             isTransmitting = false
             audioStreamer.stopTransmitting()
@@ -119,6 +112,21 @@ class WalkieTalkieService : Service() {
             udpManager.stop()
         }
         audioStreamer.release()
+        releaseWakeLock()
+    }
+
+    // ── Activity visibility ───────────────────────────────────────────────────
+
+    /** Called by MainActivity in onResume / onServiceConnected. */
+    fun onActivityVisible() {
+        isActivityVisible = true
+        hidePttOverlay()
+    }
+
+    /** Called by MainActivity in onPause. Shows the floating PTT button. */
+    fun onActivityHidden() {
+        isActivityVisible = false
+        if (isNetworkStarted) showPttOverlay()
     }
 
     // ── Network ───────────────────────────────────────────────────────────────
@@ -126,6 +134,7 @@ class WalkieTalkieService : Service() {
     fun startNetwork() {
         if (isNetworkStarted) return
         isNetworkStarted = true
+        acquireWakeLock()
         audioStreamer.initPlayback()
         Thread { udpManager.start() }.start()
     }
@@ -138,7 +147,7 @@ class WalkieTalkieService : Service() {
         playBeep()
         audioStreamer.startTransmitting()
         updateNotification("Transmitting...")
-        if (!isActivityVisible) showOverlay()
+        updatePttOverlayAppearance(transmitting = true)
     }
 
     fun stopTransmitting() {
@@ -147,7 +156,7 @@ class WalkieTalkieService : Service() {
         audioStreamer.stopTransmitting()
         playBeep()
         updateNotification("Ready")
-        hideOverlay()
+        updatePttOverlayAppearance(transmitting = false)
     }
 
     // ── Beep ──────────────────────────────────────────────────────────────────
@@ -159,19 +168,32 @@ class WalkieTalkieService : Service() {
         } catch (_: Exception) {}
     }
 
-    // ── Overlay ───────────────────────────────────────────────────────────────
+    // ── Floating PTT overlay ──────────────────────────────────────────────────
 
-    private fun showOverlay() {
-        if (overlayView != null) return
+    private fun showPttOverlay() {
+        if (pttOverlayView != null) return
         if (!Settings.canDrawOverlays(this)) return
 
-        val tv = TextView(this).apply {
-            text = "Transmitting"
+        val btn = TextView(this).apply {
+            isClickable = true
             textSize = 15f
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#CC880000"))
-            setPadding(48, 24, 48, 24)
+            setPadding(56, 28, 56, 28)
+            gravity = Gravity.CENTER
+            setOnTouchListener { v, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        startTransmitting()
+                    }
+                    MotionEvent.ACTION_UP,
+                    MotionEvent.ACTION_CANCEL -> {
+                        stopTransmitting()
+                    }
+                }
+                true
+            }
         }
+        applyPttOverlayStyle(btn, transmitting = false)
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -181,21 +203,48 @@ class WalkieTalkieService : Service() {
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = 120
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = 140
         }
 
         try {
-            wm?.addView(tv, params)
-            overlayView = tv
+            wm?.addView(btn, params)
+            pttOverlayView = btn
         } catch (_: Exception) {}
     }
 
-    private fun hideOverlay() {
-        overlayView?.let {
+    private fun hidePttOverlay() {
+        pttOverlayView?.let {
             try { wm?.removeView(it) } catch (_: Exception) {}
-            overlayView = null
+            pttOverlayView = null
         }
+    }
+
+    private fun updatePttOverlayAppearance(transmitting: Boolean) {
+        pttOverlayView?.let { handler.post { applyPttOverlayStyle(it, transmitting) } }
+    }
+
+    private fun applyPttOverlayStyle(view: TextView, transmitting: Boolean) {
+        if (transmitting) {
+            view.text = "TRANSMITTING"
+            view.setBackgroundColor(Color.parseColor("#FF6F00"))
+        } else {
+            view.text = "HOLD TO TALK"
+            view.setBackgroundColor(Color.parseColor("#C62828"))
+        }
+    }
+
+    // ── WakeLock ──────────────────────────────────────────────────────────────
+
+    private fun acquireWakeLock() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WalkieTalkie::NetworkLock")
+            .also { it.acquire() }
+    }
+
+    private fun releaseWakeLock() {
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
     }
 
     // ── Notification ──────────────────────────────────────────────────────────

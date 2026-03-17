@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity() {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             service = (binder as WalkieTalkieService.ServiceBinder).getService()
             isBound = true
-            service!!.isActivityVisible = true
+            service!!.onActivityVisible()
             service!!.onUserEvent = ::handleUserEvent
 
             if (audioPermissionGranted && !service!!.isNetworkStarted) {
@@ -141,15 +141,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        service?.isActivityVisible = true
+        service?.onActivityVisible()
         applySettings()
         setupPttButton()
     }
 
     override fun onPause() {
         super.onPause()
-        service?.isActivityVisible = false
         if (transmitting) stopTransmitting()
+        service?.onActivityHidden()
     }
 
     override fun onStop() {
