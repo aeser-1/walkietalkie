@@ -9,8 +9,9 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.media.AudioAttributes
 import android.media.AudioManager
-import android.media.ToneGenerator
+import android.media.MediaPlayer
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
@@ -23,6 +24,7 @@ import android.view.WindowManager
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import com.walkietalkie.MainActivity
+import com.walkietalkie.R
 import com.walkietalkie.audio.AudioStreamer
 import com.walkietalkie.network.UdpMulticastManager
 
@@ -57,7 +59,11 @@ class WalkieTalkieService : Service() {
 
     private var wm: WindowManager? = null
     private var overlayView: View? = null
-    private var toneGen: ToneGenerator? = null
+
+    private val beepAttrs: AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
 
     @Volatile var isTransmitting   = false; private set
     @Volatile var isNetworkStarted = false; private set
@@ -82,7 +88,6 @@ class WalkieTalkieService : Service() {
 
         udpManager   = UdpMulticastManager(this)
         audioStreamer = AudioStreamer(udpManager)
-        toneGen       = try { ToneGenerator(AudioManager.STREAM_VOICE_CALL, 80) } catch (_: Exception) { null }
         wm            = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         // Service owns the packet callback; it plays audio and notifies the
@@ -114,8 +119,6 @@ class WalkieTalkieService : Service() {
             udpManager.stop()
         }
         audioStreamer.release()
-        toneGen?.release()
-        toneGen = null
     }
 
     // ── Network ───────────────────────────────────────────────────────────────
@@ -132,7 +135,7 @@ class WalkieTalkieService : Service() {
     fun startTransmitting() {
         if (isTransmitting) return
         isTransmitting = true
-        playBeep(start = true)
+        playBeep()
         audioStreamer.startTransmitting()
         updateNotification("Transmitting...")
         if (!isActivityVisible) showOverlay()
@@ -142,19 +145,17 @@ class WalkieTalkieService : Service() {
         if (!isTransmitting) return
         isTransmitting = false
         audioStreamer.stopTransmitting()
-        playBeep(start = false)
+        playBeep()
         updateNotification("Ready")
         hideOverlay()
     }
 
     // ── Beep ──────────────────────────────────────────────────────────────────
 
-    private fun playBeep(start: Boolean) {
+    private fun playBeep() {
         try {
-            toneGen?.startTone(
-                if (start) ToneGenerator.TONE_PROP_BEEP else ToneGenerator.TONE_PROP_BEEP2,
-                150
-            )
+            MediaPlayer.create(this, R.raw.beep, beepAttrs, AudioManager.AUDIO_SESSION_ID_GENERATE)
+                ?.apply { setOnCompletionListener { it.release() }; start() }
         } catch (_: Exception) {}
     }
 
