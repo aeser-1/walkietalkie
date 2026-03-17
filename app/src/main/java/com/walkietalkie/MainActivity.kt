@@ -16,6 +16,8 @@ import android.provider.Settings
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -47,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvGroup: TextView
     private lateinit var tvStatus: TextView
     private lateinit var tvUsers: TextView
+    private lateinit var tvTransmitBadge: TextView
     private lateinit var btnPtt: Button
     private lateinit var btnSettings: Button
 
@@ -111,12 +114,13 @@ class MainActivity : AppCompatActivity() {
 
         prefs = getSharedPreferences(PREF_NAME, MODE_PRIVATE)
 
-        tvUsername  = findViewById(R.id.tv_username)
-        tvGroup     = findViewById(R.id.tv_group)
-        tvStatus    = findViewById(R.id.tv_status)
-        tvUsers     = findViewById(R.id.tv_users)
-        btnPtt      = findViewById(R.id.btn_ptt)
-        btnSettings = findViewById(R.id.btn_settings)
+        tvUsername      = findViewById(R.id.tv_username)
+        tvGroup         = findViewById(R.id.tv_group)
+        tvStatus        = findViewById(R.id.tv_status)
+        tvUsers         = findViewById(R.id.tv_users)
+        tvTransmitBadge = findViewById(R.id.tv_transmit_badge)
+        btnPtt          = findViewById(R.id.btn_ptt)
+        btnSettings     = findViewById(R.id.btn_settings)
 
         btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -249,11 +253,36 @@ class MainActivity : AppCompatActivity() {
             tvStatus.text = "Transmitting..."
             btnPtt.text   = "RELEASE TO STOP"
             btnPtt.setBackgroundColor(getColor(R.color.ptt_active))
+            showTransmitBadge()
         } else {
             tvStatus.text = "Ready"
             btnPtt.text   = "PRESS TO TALK"
             btnPtt.setBackgroundColor(getColor(R.color.ptt_idle))
+            hideTransmitBadge()
         }
+    }
+
+    private fun showTransmitBadge() {
+        tvTransmitBadge.animate().cancel()
+        tvTransmitBadge.visibility = View.VISIBLE
+        tvTransmitBadge.alpha  = 0f
+        tvTransmitBadge.scaleX = 0.82f
+        tvTransmitBadge.scaleY = 0.82f
+        tvTransmitBadge.animate()
+            .alpha(1f).scaleX(1f).scaleY(1f)
+            .setDuration(180)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+    }
+
+    private fun hideTransmitBadge() {
+        tvTransmitBadge.animate().cancel()
+        tvTransmitBadge.animate()
+            .alpha(0f).scaleX(0.82f).scaleY(0.82f)
+            .setDuration(180)
+            .setInterpolator(AccelerateInterpolator())
+            .withEndAction { tvTransmitBadge.visibility = View.GONE }
+            .start()
     }
 
     // ── Permissions ───────────────────────────────────────────────────────────
