@@ -30,6 +30,12 @@ android {
     kotlinOptions {
         jvmTarget = '1.8'
     }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "walkietalkie-${variant.versionName}.apk"
+        }
+    }
 }
 
 dependencies {
