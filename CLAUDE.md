@@ -16,6 +16,7 @@ This is a Gradle-based Android project. Use the Gradle wrapper:
 ./gradlew installDebug          # Build and install debug APK on connected device
 ./gradlew build                 # Full build (all variants)
 ./gradlew test                  # Run unit tests
+./gradlew test --tests "com.walkietalkie.SomeTest"  # Run a single test class
 ./gradlew lint                  # Run Android lint checks
 ```
 
@@ -40,6 +41,8 @@ To open in Android Studio: File > Open > select project root.
 
 - PCM 16-bit, 8 kHz mono, 20ms chunks (320 bytes/frame)
 - Daemon threads for record and playback; volatile flags for thread-safe control
+- `AudioTrack` (playback) is initialized once at startup via `initPlayback()` and stays open; `AudioRecord` (capture) is created and released on each PTT press/release cycle
+- `AudioStreamer` takes `UdpMulticastManager` as a constructor dependency and calls `sendAudio()` directly from the record thread
 
 ### Network Protocol
 
@@ -47,6 +50,17 @@ To open in Android Studio: File > Open > select project root.
 - Binary packets with 4-byte magic header `"WTKT"` + type byte + 32-byte username + 32-byte group + 2-byte payload length + payload
 - Packet types: `AUDIO (0)`, `PING (1)`, `LEAVE (2)`
 - PING sent every 2 seconds for presence; users removed from list after 5 seconds of inactivity
+
+### Threading
+
+- `UdpMulticastManager.onPacketReceived` is invoked on the network receive thread — any UI update from this callback must be dispatched via `handler.post { ... }` in `MainActivity`
+- All daemon threads are named (`wt-receive`, `wt-ping`, `wt-record`) for easy identification in debuggers
+
+### Settings Persistence
+
+- Stored in SharedPreferences under key `"wt_prefs"` (constant `MainActivity.PREF_NAME`)
+- `SettingsActivity` reads PTT mode constants directly from `MainActivity.companion` — no duplication
+- On first launch (empty username/group), `MainActivity.onResume` automatically redirects to `SettingsActivity`
 
 ### Security & Resource Limits
 
